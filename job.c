@@ -69,6 +69,7 @@ Job *make_job(char *input) {
         j->left = make_process(lptr);
         j->right = make_process(rptr);
         j->left->next = j->right;  // todo: remove next
+        j->right->next = NULL;
     } else if (rptr == NULL) {
         j->left = make_process(lptr);
         j->right = NULL;
@@ -89,4 +90,91 @@ void release_job(Job *j) {
     if (j->right)
         release_process(j->right);
     free(j);
+}
+
+void launch_process(Process *p, int pipe_in, int pipe_out) {
+    int infile = open(p->arg_in, O_RDONLY);
+    int outfile = open(p->arg_out, O_WRONLY | O_CREAT);
+    int errfile = open(p->arg_err, O_WRONLY | O_CREAT);
+
+    /* redirection */
+    if (infile >= 0 && infile != STDIN_FILENO) {
+        dup2(infile, STDIN_FILENO);
+        close(infile);
+    }
+
+    if (outfile >= 0 && outfile != STDOUT_FILENO) {
+        dup2(outfile, STDOUT_FILENO);
+        close(outfile);
+    }
+
+    if (errfile >= 0 && errfile != STDERR_FILENO) {
+        dup2(errfile, STDERR_FILENO);
+        close(errfile);
+    }
+
+    /* piping */
+    if (pipe_in != STDIN_FILENO) {
+        printf("pipe_in: %d\n", pipe_in);
+        dup2(pipe_in, STDIN_FILENO);
+        close(pipe_in);
+    }
+
+    if (pipe_out != STDOUT_FILENO) {
+        printf("pipe_out: %d\n", pipe_out);
+        dup2(pipe_out, STDOUT_FILENO);
+        close(pipe_out);
+    }
+
+    if (execvp(p->argv[0], p->argv) == -1)
+        perror("launch process error.");
+
+    exit(EXIT_FAILURE);
+}
+
+void launch_job(Job *j) {
+    int mypipe[2];
+    pid_t pid;
+    int infile = STDIN_FILENO, outfile = STDOUT_FILENO;
+
+    Process *p = j->left;
+    while (p != NULL) {
+        if (p->next) {
+            /* there is a pipe */
+            if (pipe(mypipe) < 0) {
+                perror("pipe error");
+                exit(EXIT_FAILURE);
+            }
+
+            outfile = mypipe[1];
+        } else {
+            outfile = STDOUT_FILENO;
+        }
+
+        pid = fork();
+        if (pid == 0) {
+            /* child */
+            printf("infile: %d\n", infile);
+            printf("outfile: %d\n", outfile);
+            launch_process(p, infile, outfile);
+        } else if (pid < 0) {
+            perror("fork failed");
+            exit(EXIT_FAILURE);
+        } else {
+            /* parent */
+            int wpid, status;
+            do {
+                wpid = waitpid(pid, &status, WUNTRACED);
+            } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+        }
+
+        if (infile != STDIN_FILENO)
+            close(infile);
+        if (outfile != STDOUT_FILENO)
+            close(outfile);
+        infile = mypipe[0];
+
+        p = p->next;
+    }
+
 }

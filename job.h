@@ -6,6 +6,8 @@
 #define YASH_JOB_H
 #include <unistd.h>
 #include <stdbool.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 #include "parse.h"
 
 enum {

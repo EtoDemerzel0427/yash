@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/wait.h>
 #include "parse.h"
 #include "job.h"
 
@@ -22,25 +23,7 @@ int main() {
 
         Job *j = make_job(user_input);
 
-        printf("command:%s\n", j->command);
-        printf("background: %d\n", j->background);
-        if (j->left) {
-            for (int i = 0; i < MAX_TOEKN_NUM; i++) {
-                printf("token: %s\n", j->left->argv[i]);
-            }
-            printf("arg_in: %s\n", j->left->arg_in);
-            printf("arg_out: %s\n", j->left->arg_out);
-            printf("arg_err: %s\n", j->left->arg_err);
-        }
-
-        if (j->right) {
-            for (int i = 0; i < MAX_TOEKN_NUM; i++) {
-                printf("token: %s\n", j->right->argv[i]);
-            }
-            printf("arg_in: %s\n", j->right->arg_in);
-            printf("arg_out: %s\n", j->right->arg_out);
-            printf("arg_err: %s\n", j->right->arg_err);
-        }
+        launch_job(j);
 
         release_job(j);
     }
