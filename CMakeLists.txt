@@ -3,6 +3,6 @@ project(yash C)
 
 set(CMAKE_C_STANDARD 99)
 include_directories(/usr/include/readline)
-add_executable(yash main.c parse.c parse.h job.c job.h)
+add_executable(yash main.c parse.c parse.h job.c job.h jcntl.c jcntl.h)
 target_link_libraries(yash readline)
 add_compile_definitions(DEBUG)
