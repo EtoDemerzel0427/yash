@@ -7,15 +7,15 @@
 #include <signal.h>
 #include <termio.h>
 #include "parse.h"
-#include "jcntl.h"
+#include "job.h"
 
 job_t *cur_job = NULL;
 
 void init_shell() {
     shell_terminal = STDIN_FILENO;
 
-    while (tcgetpgrp(shell_terminal) != (shell_pgid = getpgrp()))
-        kill(-shell_pgid, SIGTTIN);
+//    while (tcgetpgrp(shell_terminal) != (shell_pgid = getpgrp()))
+//        kill(-shell_pgid, SIGTTIN);
 
     /* Ignore interactive and job-control signals.  */
     signal(SIGINT, SIG_IGN);
@@ -41,11 +41,10 @@ void init_shell() {
 }
 
 int main() {
-
-
+    init_shell();
     char *user_input;
     while ((user_input = readline("# ")) != NULL) {
-        init_shell();
+        notify_background_job();
         if (strlen(user_input) > 0) {
             add_history(user_input);
         }
@@ -54,9 +53,14 @@ int main() {
         if (user_input[strlen(user_input - 1)] == '\n') {
             user_input[strlen(user_input) - 1] = '\0';
         }
-//
-//        if (strlen(user_input) == 0)
-//            continue;
+
+        if (strlen(user_input) == 0)
+            continue;
+
+        if (strcmp(user_input, "jobs") == 0) {
+            print_all_jobs();
+            continue;
+        }
 
         job_t *j = make_job(user_input);
         if (j == NULL)

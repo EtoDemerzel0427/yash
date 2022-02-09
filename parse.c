@@ -25,10 +25,14 @@ char *trim_space(char *str)
 }
 
 void parse_pipe(char *input, char **lptr, char **rptr) {
-    *lptr = strtok(input, "|");
-    *rptr = strtok(NULL, "|");
-    printf("lptr: %s\n", *lptr);
-    printf("rptr: %s\n", *rptr);
+    if (input[0] == '|') {
+        *lptr = NULL;
+        *rptr = strtok(input, "|");
+    } else {
+        *lptr = strtok(input, "|");
+        *rptr = strtok(NULL, "|");
+    }
+
     if (strtok(NULL, "|") != NULL) {
         fprintf(stderr, "We do not support more than one pipe.");
         exit(EXIT_FAILURE);

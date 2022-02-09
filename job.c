@@ -4,12 +4,12 @@
 
 #include "job.h"
 #include <errno.h>
+#include <pthread.h>
 
 extern job_t *cur_job;
 
 proc_t *make_process(char *input) {
     if (input == NULL) {
-//        fprintf(stderr, "make_process: No input provided.");
         return NULL;
     }
     proc_t *p = (proc_t *) malloc(sizeof(proc_t));
@@ -18,7 +18,7 @@ proc_t *make_process(char *input) {
     p->argv = parse_process(input);
     p->pid = -2;  // will not be assigned until launch
     p->arg_in = p->arg_out = p->arg_err = NULL;
-    p->stat = Running;  // todo: update
+    p->stat = Running;
 
     /* note that here we assume test cases are valid input
      * so we don't bother to perform any boundary checks for simplicity.
@@ -61,12 +61,27 @@ job_t *make_job(char *input) {
     j->command = (char *) malloc(MAX_LINE_LEN + 1);
     strcpy(j->command, input);
     j->background = false;
+    j->notified = false;
     char *lptr, *rptr;
     if (input[strlen(input) - 1] == '&') {
         input[strlen(input) - 1] = '\0';
+        j->command[strlen(j->command) - 1] = '\0';
         j->background = true;
     }
     parse_pipe(input, &lptr, &rptr);
+
+    if (lptr == NULL) {
+        fprintf(stderr, "yash: parse error near `|`\n");
+        return NULL;
+    }
+
+    int job_id = 0;
+    /* find current max job id */
+    for (job_t *jb = cur_job; jb != NULL; jb = jb->next) {
+        if (jb->job_id > job_id)
+            job_id = jb->job_id;
+    }
+    j->job_id = job_id + 1;
 
     if (lptr != NULL && rptr != NULL) {
         j->left = make_process(lptr);
@@ -96,7 +111,7 @@ void release_job(job_t *j) {
 }
 
 void launch_process(proc_t *p, int pipe_in, int pipe_out) {
-    fprintf(stderr, "process pid: %d, pgid: %d\n", getpid(), getpgid(getpid()));
+//    fprintf(stderr, "process pid: %d, pgid: %d\n", getpid(), getpgid(getpid()));
     signal (SIGINT, SIG_DFL);
     signal (SIGQUIT, SIG_DFL);
     signal (SIGTSTP, SIG_DFL);
@@ -177,9 +192,11 @@ void launch_job(job_t *j) {
         } else {
             /* parent. Repeat to avoid race condition. */
             p->pid = pid;
-            if (pgid < 0)
+            if (pgid < 0) {
                 pgid = p->pid;
+            }
             setpgid(p->pid, pgid);
+
             if (!j->background) {
                 tcsetpgrp(shell_terminal, pgid);
             }
@@ -201,7 +218,7 @@ void launch_job(job_t *j) {
         int wpid, status;
         do {
             wpid = waitpid(WAIT_ANY, &status, WUNTRACED);
-            printf("wpid: %d\n", wpid);
+//            printf("wpid: %d\n", wpid);
         } while (!mark_child_status_on_signal(wpid, status) && !job_is_completed(j) && !job_is_stopped(j));
 
         if (j->left)
@@ -218,32 +235,50 @@ void launch_job(job_t *j) {
  * pid is the returned value of waitpid.
  * */
 int mark_child_status_on_signal(pid_t pid, int status) {
-    if (pid < 0) {
-        perror("waitpid error.\n");
-        return -1;
-    }
-
-    if (pid == 0 || errno == ECHILD) {
-        return -1;
-    }
-    for (job_t *j = cur_job; j != NULL; j = j->next) {
-        for (proc_t *p = j->left; p != NULL; p = p->next) {
-            if (p->pid == pid) {
-                if (WIFSTOPPED(status)) {
-                    /* stopped by SIGTSTP */
-                    p->stat = Stopped;
-                } else {
-                    p->stat = Completed;   // Terminated by ctrl-z is also a form of completion
-                    if (WIFSIGNALED (status))
-                        fprintf (stderr, "%d: Terminated by signal %d.\n",
-                                 (int) pid, WTERMSIG (status));
+//    if (pid < 0) {
+//        perror("waitpid error.\n");
+//        return -1;
+//    }
+//
+//    if (pid == 0 || errno == ECHILD) {
+//        return -1;
+//    }
+    if (pid > 0) {
+        for (job_t *j = cur_job; j != NULL; j = j->next) {
+            for (proc_t *p = j->left; p != NULL; p = p->next) {
+                if (p->pid == pid) {
+                    if (WIFSTOPPED(status)) {
+                        /* stopped by SIGTSTP */
+                        p->stat = Stopped;
+                    } else {
+                        p->stat = Completed;   // Terminated by ctrl-z is also a form of completion
+                        if (WIFSIGNALED (status))
+                            fprintf(stderr, "%d: Terminated by signal %d.\n",
+                                    (int) pid, WTERMSIG (status));
+                    }
+                    return 0; // so that continue waiting
                 }
-                return 0; // so that continue to wait
             }
         }
+        fprintf(stderr, "No such child process: %d\n", (int) pid);
+        return -1;
+    } if (pid == 0 || errno == ECHILD) {
+        return -1;
+    } else {
+        perror("waitpid error");
+        return -1;
     }
-    fprintf(stderr, "No such child process: %d\n", (int) pid);
-    return -1;
+}
+
+/* update status without blocking */
+void update_status() {
+    int status;
+    pid_t wpid;
+
+    do {
+        wpid = waitpid(WAIT_ANY, &status, WUNTRACED | WNOHANG);
+    } while (!mark_child_status_on_signal(wpid, status));
+//    printf("update_status wpid: %d\n", wpid);
 }
 
 bool job_is_completed(job_t *j) {
@@ -256,7 +291,7 @@ bool job_is_completed(job_t *j) {
 }
 
 bool job_is_stopped(job_t *j) {
-    if (job_is_completed(j)) return false;
+//    if (job_is_completed(j)) return false;  // we always do these two together, so it is not necessary
 
     for (proc_t *p = j->left; p != NULL; p = p->next) {
         if (p->stat != Stopped && p->stat != Completed) {
@@ -265,4 +300,109 @@ bool job_is_stopped(job_t *j) {
     }
 
     return true;
+}
+
+/* as long as there is one process running, the job is running */
+bool job_is_running(job_t *j) {
+    for (proc_t *p = j->left; p != NULL; p = p->next) {
+        if (p->stat == Running)
+            return true;
+    }
+    return false;
+}
+
+/* in every readline loop, examine whether there's finished/stopped background jobs,
+ * and output to foreground */
+void notify_background_job() {
+    update_status();
+    job_t *prev_job = NULL, *next_job = NULL, *local_cur_job = cur_job;
+    int index = 0;
+    char *results[MAX_JOBS];
+
+    for (job_t *j = cur_job; j != NULL; j = next_job) {
+        next_job = j->next;
+        if (job_is_completed(j) && j->background) {
+            char *cur_res = (char *) malloc(MAX_LINE_LEN);
+            sprintf(cur_res, "[%d]%c  Done                    %s&\n", j->job_id, (j == local_cur_job)? '+': '-', j->command);
+            results[index++] = cur_res;
+
+            if (prev_job != NULL) {
+                prev_job->next = j->next;
+            } else {
+                cur_job = j->next;
+            }
+
+            release_job(j);
+        } else if (job_is_stopped(j) && j->background && j->notified == false) {
+            char *cur_res = (char *) malloc(MAX_LINE_LEN);
+            sprintf(cur_res, "[%d]%c  Stopped                 %s&\n", j->job_id, (j == local_cur_job)? '+': '-', j->command);
+            results[index++] = cur_res;
+
+            j->notified = true;
+            prev_job = j;
+        } else {
+            prev_job = j;
+        }
+    }
+
+    for (int i = index - 1; i >= 0; i--) {
+        printf("%s", results[i]);
+        free(results[i]);
+    }
+
+}
+
+/* this is the function invoked by command `jobs`
+ * compared to `notify_background_job`, this one
+ * print out all the current jobs (not completed,
+ * no matter bg or fg).
+ */
+void print_all_jobs() {
+    update_status();
+    char *results[MAX_JOBS];
+    int index = 0;
+    job_t *local_cur_job = cur_job, *next_job = NULL, *prev_job = NULL;
+
+    for (job_t *j = cur_job; j != NULL; j = next_job) {
+        next_job = j->next;
+        if (job_is_completed(j)) {
+            // we leave releasing background jobs to `notify_background_job`
+            if (!j->background) {
+                if (prev_job != NULL) {
+                    prev_job->next = j->next;
+                } else {
+                    cur_job = j->next;
+                }
+
+                release_job(j);
+            }
+            continue;
+        }
+        if (job_is_stopped(j)) {
+            char *cur_res = (char *) malloc(MAX_LINE_LEN);
+            if (j->background)
+                sprintf(cur_res, "[%d]%c  Stopped                 %s&\n", j->job_id, (j == local_cur_job) ? '+' : '-',
+                        j->command);
+            else
+                sprintf(cur_res, "[%d]%c  Stopped                 %s\n", j->job_id, (j == local_cur_job) ? '+' : '-',
+                        j->command);
+            results[index++] = cur_res;
+        } else if (job_is_running(j)) {
+            char *cur_res = (char *) malloc(MAX_LINE_LEN);
+            if (j->background)
+                sprintf(cur_res, "[%d]%c  Running                 %s\n", j->job_id, (j == local_cur_job) ? '+' : '-',
+                        j->command);
+            else
+                sprintf(cur_res, "[%d]%c  Stopped                 %s\n", j->job_id, (j == local_cur_job) ? '+' : '-',
+                        j->command);
+            results[index++] = cur_res;
+        }
+
+        prev_job = j;
+    }
+
+    for (int i = index - 1; i >= 0; i--) {
+        printf("%s", results[i]);
+        free(results[i]);
+    }
 }

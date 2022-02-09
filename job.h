@@ -16,6 +16,8 @@
 #include <termios.h>
 #include "parse.h"
 
+#define MAX_JOBS 25
+
 pid_t shell_pgid;
 struct termios shell_tmodes;
 int shell_terminal;
@@ -40,17 +42,19 @@ typedef struct proc_t
 /* A job is a pipeline of processes.  */
 typedef struct job_t
 {
-    struct job_t *next;           /* next active job */
-    char *command;              /* command line, used for messages */
+    struct job_t *next;            /* next active job */
+    char *command;                 /* command line, used for messages */
     proc_t *left;
-    proc_t *right;             /* as there is at most one pipe, we can simplify this as left right processes */
-    pid_t pgid;                 /* process group ID */
-    stat_t stat;
-//    char notified;              /* true if user told about stopped job */
+    proc_t *right;                 /* as there is at most one pipe, we can simplify this as left right processes */
+    pid_t pgid;                    /* process group ID */
+    int job_id;                    /* the index for `jobs`, and the background job terminated message */
+    bool notified;                 /* true if user told about stopped job */
 //    struct termios tmodes;      /* saved terminal modes */
-    bool background;            /* indication of whether this job is running in foreground or background */
+    bool background;               /* indication of whether this job is running in foreground or background */
 //    int stdin, stdout, stderr;  /* standard i/o channels */
 } job_t;
+
+extern job_t *cur_job;
 
 proc_t *make_process(char *input);
 job_t *make_job(char *input);
@@ -61,5 +65,7 @@ void launch_job(job_t *);
 int mark_child_status_on_signal(pid_t pid, int status);
 bool job_is_completed(job_t *j);
 bool job_is_stopped(job_t *j);
+void notify_background_job();
+void print_all_jobs();
 
 #endif //YASH_JOB_H
