@@ -67,5 +67,7 @@ bool job_is_completed(job_t *j);
 bool job_is_stopped(job_t *j);
 void notify_background_job();
 void print_all_jobs();
+void fg();
+void bg();
 
 #endif //YASH_JOB_H

@@ -6,7 +6,7 @@
 #include <errno.h>
 #include <pthread.h>
 
-extern job_t *cur_job;
+//extern job_t *cur_job;
 
 proc_t *make_process(char *input) {
     if (input == NULL) {
@@ -150,8 +150,13 @@ void launch_process(proc_t *p, int pipe_in, int pipe_out) {
         close(pipe_out);
     }
 
-    if (execvp(p->argv[0], p->argv) == -1)
-        perror("launch process error.");
+    execvp(p->argv[0], p->argv);
+//    if (execvp(p->argv[0], p->argv) == -1)
+//        perror("launch process error.");
+
+    if (errno != ENOENT) {
+        perror("launch process error");
+    }
 
     exit(EXIT_FAILURE);
 }
@@ -179,8 +184,10 @@ void launch_job(job_t *j) {
         if (pid == 0) {
             /* child */
             p->pid = getpid();
-            if (pgid < 0)
+            if (pgid < 0) {
                 pgid = p->pid;
+                j->pgid = pgid;
+            }
             setpgid(p->pid, pgid);
             if (!j->background) {
                 tcsetpgrp(shell_terminal, pgid);
@@ -194,6 +201,7 @@ void launch_job(job_t *j) {
             p->pid = pid;
             if (pgid < 0) {
                 pgid = p->pid;
+                j->pgid = pgid;
             }
             setpgid(p->pid, pgid);
 
@@ -221,11 +229,11 @@ void launch_job(job_t *j) {
 //            printf("wpid: %d\n", wpid);
         } while (!mark_child_status_on_signal(wpid, status) && !job_is_completed(j) && !job_is_stopped(j));
 
-        if (j->left)
-            printf("left stat: %d\n", j->left->stat);
-        if (j->right)
-            printf("right stat: %d\n", j->right->stat);
-        printf("errno: %d\n", errno);
+//        if (j->left)
+//            printf("left stat: %d\n", j->left->stat);
+//        if (j->right)
+//            printf("right stat: %d\n", j->right->stat);
+//        printf("errno: %d\n", errno);
     }
 
     tcsetpgrp(shell_terminal, shell_pgid);
@@ -321,11 +329,13 @@ void notify_background_job() {
 
     for (job_t *j = cur_job; j != NULL; j = next_job) {
         next_job = j->next;
-        if (job_is_completed(j) && j->background) {
-            char *cur_res = (char *) malloc(MAX_LINE_LEN);
-            sprintf(cur_res, "[%d]%c  Done                    %s&\n", j->job_id, (j == local_cur_job)? '+': '-', j->command);
-            results[index++] = cur_res;
-
+        if (job_is_completed(j)) {
+            if (j->background) {
+                char *cur_res = (char *) malloc(MAX_LINE_LEN);
+                sprintf(cur_res, "[%d]%c  Done                    %s&\n", j->job_id, (j == local_cur_job) ? '+' : '-',
+                        j->command);
+                results[index++] = cur_res;
+            }
             if (prev_job != NULL) {
                 prev_job->next = j->next;
             } else {
@@ -361,21 +371,20 @@ void print_all_jobs() {
     update_status();
     char *results[MAX_JOBS];
     int index = 0;
-    job_t *local_cur_job = cur_job, *next_job = NULL, *prev_job = NULL;
+    job_t *local_cur_job = cur_job;
 
-    for (job_t *j = cur_job; j != NULL; j = next_job) {
-        next_job = j->next;
+    for (job_t *j = cur_job; j != NULL; j = j->next) {
+//        next_job = j->next;
         if (job_is_completed(j)) {
-            // we leave releasing background jobs to `notify_background_job`
-            if (!j->background) {
-                if (prev_job != NULL) {
-                    prev_job->next = j->next;
-                } else {
-                    cur_job = j->next;
-                }
-
-                release_job(j);
-            }
+            if (!j->background)
+//                if (prev_job != NULL) {
+//                    prev_job->next = j->next;
+//                } else {
+//                    cur_job = j->next;
+//                }
+//
+//                release_job(j);
+//            }
             continue;
         }
         if (job_is_stopped(j)) {
@@ -398,11 +407,81 @@ void print_all_jobs() {
             results[index++] = cur_res;
         }
 
-        prev_job = j;
+//        prev_job = j;
     }
 
     for (int i = index - 1; i >= 0; i--) {
         printf("%s", results[i]);
         free(results[i]);
     }
+}
+
+/* take the most background running or stopped job back to run in foreground */
+void fg() {
+    /* find the first background job */
+    job_t *j = NULL;
+    for (j = cur_job; j != NULL; j = j->next) {
+        /* running background */
+        if (job_is_running(j) && j->background) {
+            break;
+        }
+        /* stopped */
+        if (job_is_stopped(j))
+            break;
+    }
+
+    if (j == NULL) {
+        fprintf(stderr, "-yash: fg: current: no such job\n");
+        return;
+    }
+
+    /* take the job to foreground */
+    j->background = false;
+    for (proc_t *p = j->left; p != NULL; p = p->next) {
+        p->stat = Running;
+    }
+    printf("%s\n", j->command);
+//    printf("pgid: %d\n", j->pgid);
+    tcsetpgrp(shell_terminal, j->pgid);
+
+    kill(-j->pgid, SIGCONT);
+
+    int wpid, status;
+    do {
+        wpid = waitpid(WAIT_ANY, &status, WUNTRACED);
+//        printf("fg wpid: %d\n", wpid);
+    } while (!mark_child_status_on_signal(wpid, status) && !job_is_completed(j) && !job_is_stopped(j));
+
+//    if (j->left)
+//        printf("fg left stat: %d\n", j->left->stat);
+//    if (j->right)
+//        printf("fg right stat: %d\n", j->right->stat);
+//    printf("fg errno: %d\n", errno);
+
+    tcsetpgrp(shell_terminal, shell_pgid);
+}
+
+/* take the most recent stopped job back to run in background */
+void bg() {
+    job_t *j = NULL;
+
+    for (j = cur_job; j != NULL; j = j->next) {
+        if (job_is_stopped(j)) {
+            break;
+        }
+    }
+
+    if (j == NULL) {
+        fprintf(stderr, "-yash: fg: current: no such job\n");
+        return;
+    }
+
+    /* put the job run in background */
+    j->background = true;
+    for (proc_t *p = j->left; p != NULL; p = p->next) {
+        p->stat = Running;
+    }
+
+    printf("[%d]%c %s&\n", j->job_id, (j == cur_job)? '+':'-', j->command);
+    kill(-j->pgid, SIGCONT);
 }

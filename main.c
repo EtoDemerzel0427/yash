@@ -62,6 +62,16 @@ int main() {
             continue;
         }
 
+        if (strcmp(user_input, "fg") == 0) {
+            fg();
+            continue;
+        }
+
+        if (strcmp(user_input, "bg") == 0) {
+            bg();
+            continue;
+        }
+
         job_t *j = make_job(user_input);
         if (j == NULL)
             continue;
