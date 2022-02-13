@@ -119,9 +119,9 @@ void launch_process(proc_t *p, int pipe_in, int pipe_out) {
     signal (SIGTTOU, SIG_DFL);
     signal (SIGCHLD, SIG_DFL);
 
-    int infile = open(p->arg_in, O_RDONLY);
-    int outfile = open(p->arg_out, O_WRONLY | O_CREAT | O_TRUNC);
-    int errfile = open(p->arg_err, O_WRONLY | O_CREAT | O_TRUNC);
+    int infile = open(p->arg_in, O_RDONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
+    int outfile = open(p->arg_out, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
+    int errfile = open(p->arg_err, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
 
     /* redirection */
     if (infile >= 0 && infile != STDIN_FILENO) {
@@ -260,7 +260,7 @@ int mark_child_status_on_signal(pid_t pid, int status) {
                         p->stat = Stopped;
                     } else {
                         p->stat = Completed;   // Terminated by ctrl-z is also a form of completion
-                        if (WIFSIGNALED (status))
+                        if (WIFSIGNALED(status))
                             fprintf(stderr, "%d: Terminated by signal %d.\n",
                                     (int) pid, WTERMSIG (status));
                     }

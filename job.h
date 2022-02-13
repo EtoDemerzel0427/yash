@@ -49,9 +49,7 @@ typedef struct job_t
     pid_t pgid;                    /* process group ID */
     int job_id;                    /* the index for `jobs`, and the background job terminated message */
     bool notified;                 /* true if user told about stopped job */
-//    struct termios tmodes;      /* saved terminal modes */
     bool background;               /* indication of whether this job is running in foreground or background */
-//    int stdin, stdout, stderr;  /* standard i/o channels */
 } job_t;
 
 extern job_t *cur_job;
