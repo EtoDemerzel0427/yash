@@ -18,10 +18,10 @@
 
 #define MAX_JOBS 25
 
+/* shell related */
 pid_t shell_pgid;
-struct termios shell_tmodes;
 int shell_terminal;
-int shell_is_interactive;
+
 
 typedef enum {
     Running,
@@ -29,21 +29,21 @@ typedef enum {
     Completed
 } stat_t;
 
-/* A process is a single process.  */
+
 typedef struct proc_t
 {
-    struct proc_t *next;                             /* next process in pipeline */
+    struct proc_t *next;                              /* next process in pipeline */
     char **argv;                                      /* for exec */
     char *arg_in, *arg_out, *arg_err;                 /* the args after > < 2> respectively */
     pid_t pid;                                        /* process ID */
-    stat_t stat;                                       /* reported stat value */
+    stat_t stat;
 } proc_t;
 
-/* A job is a pipeline of processes.  */
+
 typedef struct job_t
 {
-    struct job_t *next;            /* next active job */
-    char *command;                 /* command line, used for messages */
+    struct job_t *next;
+    char *command;
     proc_t *left;
     proc_t *right;                 /* as there is at most one pipe, we can simplify this as left right processes */
     pid_t pgid;                    /* process group ID */

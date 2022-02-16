@@ -123,7 +123,11 @@ void launch_process(proc_t *p, int pipe_in, int pipe_out) {
     int outfile = open(p->arg_out, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
     int errfile = open(p->arg_err, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
 
-    /* redirection */
+    /* specified input redirection but cannot open */
+    if (p->arg_in != NULL && infile == -1) {
+//        perror("No such file or directory.\n");
+        exit(EXIT_FAILURE);
+    }
     if (infile >= 0 && infile != STDIN_FILENO) {
         dup2(infile, STDIN_FILENO);
         close(infile);
@@ -259,10 +263,10 @@ int mark_child_status_on_signal(pid_t pid, int status) {
                         /* stopped by SIGTSTP */
                         p->stat = Stopped;
                     } else {
-                        p->stat = Completed;   // Terminated by ctrl-z is also a form of completion
-                        if (WIFSIGNALED(status))
-                            fprintf(stderr, "%d: Terminated by signal %d.\n",
-                                    (int) pid, WTERMSIG (status));
+                        p->stat = Completed;   // Terminated by ctrl-c is also a form of completion
+//                        if (WIFSIGNALED(status))
+//                            fprintf(stderr, "%d: Terminated by signal %d.\n",
+//                                    (int) pid, WTERMSIG (status));
                     }
                     return 0; // so that continue waiting
                 }
@@ -399,10 +403,11 @@ void print_all_jobs() {
         } else if (job_is_running(j)) {
             char *cur_res = (char *) malloc(MAX_LINE_LEN);
             if (j->background)
-                sprintf(cur_res, "[%d]%c  Running                 %s\n", j->job_id, (j == local_cur_job) ? '+' : '-',
+                sprintf(cur_res, "[%d]%c  Running                 %s&\n", j->job_id, (j == local_cur_job) ? '+' : '-',
                         j->command);
             else
-                sprintf(cur_res, "[%d]%c  Stopped                 %s\n", j->job_id, (j == local_cur_job) ? '+' : '-',
+                // it is impossible to reach here, but anyways, I use this as a debug outputvim
+                sprintf(cur_res, "[%d]%c  Running                 %s\n", j->job_id, (j == local_cur_job) ? '+' : '-',
                         j->command);
             results[index++] = cur_res;
         }

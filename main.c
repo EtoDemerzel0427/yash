@@ -14,10 +14,8 @@ job_t *cur_job = NULL;
 void init_shell() {
     shell_terminal = STDIN_FILENO;
 
-//    while (tcgetpgrp(shell_terminal) != (shell_pgid = getpgrp()))
-//        kill(-shell_pgid, SIGTTIN);
 
-    /* Ignore interactive and job-control signals.  */
+    /* the shell will ignore these signals itself, but let jobs running in it handle them */
     signal(SIGINT, SIG_IGN);
     signal(SIGQUIT, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
@@ -25,18 +23,23 @@ void init_shell() {
     signal(SIGTTOU, SIG_IGN);
     signal(SIGCHLD, SIG_DFL);
 
-    /* Put ourselves in our own process group.  */
     shell_pgid = getpid();
     if (setpgid(shell_pgid, shell_pgid) < 0) {
         perror("Couldn't put the shell in its own process group");
         exit(EXIT_FAILURE);
     }
 
-    /* Grab control of the terminal.  */
     tcsetpgrp(shell_terminal, shell_pgid);
 
-    /* Save default terminal attributes for shell.  */
-    tcgetattr(shell_terminal, &shell_tmodes);
+//    tcgetattr(shell_terminal, &shell_tmodes);
+    // Ensure that three file descriptors are open.
+    int fd;
+    while((fd = open("console", O_RDWR)) >= 0){
+        if(fd >= 3){
+            close(fd);
+            break;
+        }
+    }
 
 }
 
@@ -57,6 +60,13 @@ int main() {
         if (strlen(user_input) == 0)
             continue;
 
+        if (strchr(user_input, '&') != NULL && strchr(user_input, '&') - user_input < strlen(user_input) - 1) {
+            printf("& must be the last char.\n");
+            continue;
+        }
+
+
+        /*********************    builtins    *******************/
         if (strcmp(user_input, "jobs") == 0) {
             print_all_jobs();
             continue;
