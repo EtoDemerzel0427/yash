@@ -126,8 +126,22 @@ void launch_process(proc_t *p, int pipe_in, int pipe_out) {
     /* specified input redirection but cannot open */
     if (p->arg_in != NULL && infile == -1) {
 //        perror("No such file or directory.\n");
+        fprintf(stderr, "yash: No such file or directory.\n");
         exit(EXIT_FAILURE);
     }
+
+    /* piping */
+    if (pipe_in != STDIN_FILENO) {
+        dup2(pipe_in, STDIN_FILENO);
+        close(pipe_in);
+    }
+
+    if (pipe_out != STDOUT_FILENO) {
+        dup2(pipe_out, STDOUT_FILENO);
+        close(pipe_out);
+    }
+
+
     if (infile >= 0 && infile != STDIN_FILENO) {
         dup2(infile, STDIN_FILENO);
         close(infile);
@@ -143,16 +157,7 @@ void launch_process(proc_t *p, int pipe_in, int pipe_out) {
         close(errfile);
     }
 
-    /* piping */
-    if (pipe_in != STDIN_FILENO) {
-        dup2(pipe_in, STDIN_FILENO);
-        close(pipe_in);
-    }
 
-    if (pipe_out != STDOUT_FILENO) {
-        dup2(pipe_out, STDOUT_FILENO);
-        close(pipe_out);
-    }
 
     execvp(p->argv[0], p->argv);
 //    if (execvp(p->argv[0], p->argv) == -1)
@@ -443,7 +448,9 @@ void fg() {
     /* take the job to foreground */
     j->background = false;
     for (proc_t *p = j->left; p != NULL; p = p->next) {
-        p->stat = Running;
+        if (p->stat != Completed)
+            p->stat = Running;
+//        printf("%s: %d\n", p->argv[0], p->pid);
     }
     printf("%s\n", j->command);
 //    printf("pgid: %d\n", j->pgid);
